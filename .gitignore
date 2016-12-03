@@ -87,3 +87,8 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+Data/
+*~
+MusicNetTutorials/
+.DS_Store
