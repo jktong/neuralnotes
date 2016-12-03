@@ -8,7 +8,7 @@ import numpy as np
 CHUNK = 1024
 WINDOW = np.blackman(CHUNK)
 
-12TET_NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
+TET_NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
 ENHARMONICS = {'Cb':'B',
                'Db':'C#',
                'Eb':'D#',
@@ -33,7 +33,7 @@ def pitch_to_freq(pitch):
     note = pitch[:2]
     if note in ENHARMONICS:
         note = ENHARMONICS[note]
-    freq = C0*2**12TET_NOTES.index(note)*2**octave
+    freq = C0*2**TET_NOTES.index(note)*2**octave
     return freq
 
 def play_pitch(pitch, seconds):
