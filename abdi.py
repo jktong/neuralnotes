@@ -97,7 +97,8 @@ class Model(object):
         return self
 
     def predict(self, data):
-        pass
+        logits = self.logits.eval(feed_dict={self.data: data})
+        return tf.argmax(tf.nn.softmax(logits), 1).eval()
         
 
 if __name__ == '__main__':
@@ -105,12 +106,14 @@ if __name__ == '__main__':
     m = Model('mymodel')
 
     # uncomment one
-    #m.init() # run this if you are training the model for the first time
+    m.init() # run this if you are training the model for the first time
     #m.load('./models/test1') # else load a model already on disk
 
     # fake data (data2 doesn't work yet, needs paddings)
-    data1 = np.load('./data/fake_S100_N10_100_25.npy')
-    data2 = np.load('./data/fake_S100_N5_100_25.npy')
+    data1 = np.load('./data/fake_S1000_N10_100_25.npy')
+    #data2 = np.load('./data/fake_S100_N5_100_25.npy')
 
     # train and save
-    m.train(data1).save('./models/model_two')
+    m.train(data1)
+    print m.predict(data1)
+    #m..save('./models/model_two')
