@@ -33,7 +33,7 @@ def pitch_to_freq(pitch):
     note = pitch[:2]
     if note in ENHARMONICS:
         note = ENHARMONICS[note]
-    freq = C0*2**TET_NOTES.index(note)*2**octave
+    freq = C0*2**(TET_NOTES.index(note)/12.0)*2**octave
     return freq
 
 def play_pitch(pitch, seconds):
