@@ -3,7 +3,10 @@
 *.npz
 
 # Models
-models/
+models/*
+
+# Data
+data/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
