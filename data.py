@@ -27,8 +27,8 @@ def make_fake_data(S, N, num_notes, num_lengths):
     data = np.zeros((S, N+1, num_notes+num_lengths))
     for i in xrange(S):
         for j in xrange(N+1):
-            idx1 = np.random.randint(num_notes)
-            idx2 = np.random.randint(num_lengths) + num_notes
+            idx1 = np.random.randint(num_notes-1)
+            idx2 = np.random.randint(num_lengths-1) + num_notes
             data[i,j,[idx1,idx2]] = 1
     np.save('./data/fake_S{}_N{}_{}_{}.npy'.format(S, N, num_notes, num_lengths), data)
     
