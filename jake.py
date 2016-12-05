@@ -1,141 +1,148 @@
 import math
 import numpy as np
 import tensorflow as tf
-import os 
+import os
 
-class JakeModel:
-	seed = 128
-	rng = np.random.RandomState(seed)
-	
-	def __init__(self, get_train_data_fn, num_notes=128):
+class ScalarModel:
+	MIN_C = 2
+	MAX_C = 10
+
+	def __init__(self, get_train_data_fn, C=None, num_notes=128):
 		self.num_notes = num_notes
-		_data_1hot = get_train_data_fn() # A list of 2d np arrays
-		self.data = self.convert_to_tuples(_data_1hot) # List of list of tuples
 
-		# Maps N to model, and x, and y
-		self.model = {}
-		self.x = {}
-		self.y = {}
-		self.output_layer = {}
+		# Maps C to ScalarContextModel objects
+		self.models = {} 
+		if C == None:
+			for c in range(MIN_C, MAX_C + 1):
+				self.models[c] = ScalarContextModel(get_train_data_fn, c, num_notes)
+				self.models[c].train()
+		else:
+			self.models[C] = ScalarContextModel(get_train_data_fn, C, num_notes)
+			self.models[C].train()
 
-	def __call__(self, notes, N=10):
-		return test(notes, N)
+	def predict(self, input_data):
+		""" Returns predictions given the input_data. """
+		c = len(input_data[0])
+		if c not in self.models:
+			raise ValueError("No model trained with C={}".format(c))
 
-	def test(self, test_points_1hot, N):
-		""" Given notes (list of 1hot notes), predicts the next note """
-		tuples_notes = self.convert_to_tuples(test_points_1hot)
-		test_data = self.format(tuples_notes)
-		sess = self.model[N]
-		x = self.x[N]
-		f = sess.run(self.output_layer[N], feed_dict={x: test_data})
-		print f
+		return self.models[c].predict(input_data)
+
+	def save(self, the_dir):
+		for c, m in self.models.items():
+			try:
+				p = os.path.join(the_dir, "{}.model".format(c))
+				m.save(p)
+			except Exception as e:
+				print "Error saving model for C={}:\n\t{}".format(c, e)
+
+	def load(self, the_dir):
+		for c in range(MIN_C, MAX_C + 1):
+			try:
+				m = ScalarContextModel(get_train_data_fn, c, self.num_notes)
+				p = os.path.join(the_dir, "{}.model".format(c))
+				m.load(p)
+			except Exception as e:
+				print "Error loading model for C={}:\n\t{}".format(c, e)
 
 
-	def format(self, list_list_tup):
-		""" Given a list of list of tuples, returns a list of lists representing 
-		the list of input vectors (list of test points) """
-		n_test_points = len(list_list_tup)
-		N = len(list_list_tup[0])
-		tp_size = len(list_list_tup[0][0])
+class ScalarContextModel:
+	seed = 128 #lol 
+	rng = np.random.RandomState(seed)
 
-		formatted = np.empty([n_test_points, N * tp_size])
-		for t in xrange(n_test_points):
-			test_point = list_list_tup[t]
-			for tupi in xrange(len(test_point)):
-				tup = test_point[tupi]
-				for e in xrange(len(tup)):
-					ele = tup[e]
-					formatted[t, tupi * N + e] = ele
-		print "input: ", list_list_tup
-		print "formatted: ", formatted
-		return formatted
+	epochs = 8
+	batch_size = 2
+	learning_rate = 0.01
+	
+	def __init__(self, get_train_data_fn, C, num_notes=128):
+		""" get_train_data_fn(C) returns a 3D numpy array, which is 
+		an array of samples. Each sample is a 2D array, that is, an 
+		array of C+1 notes, where each note is an array of length 2,
+		with elements [note_pitch, note_duration] """
+		self.C = C
+		self.num_notes = num_notes
+		self.data = get_train_data_fn(C) # 3D tensor
 
-	def convert_to_tuples(self, data_1hot):
-		""" Converts list of 2d arrays to list of list of tuples """
-		n_songs = len(data_1hot)
-		result = [None] * n_songs
-		for s in xrange(n_songs):
-			notes = data_1hot[s]
-			n_notes = len(notes)
-			datum = [None] * n_notes
-			for i in xrange(n_notes):
-				note = notes[i]
-				# Finds indices where the value is 1 instead of 0
-				datum[i] = (np.argmax(note[:self.num_notes]), np.argmax(note[self.num_notes:]))
-			result[s] = datum
-		return result
+		self.num_batches = int(5 * len(self.data) / self.batch_size)
 
-	def make_input_domains(self, song_data, N):
-		domains = []
-		for s in range(len(song_data)):
-			for n in range(N, len(song_data[s])):
-				domains.append((s, n))
-		return domains
+		# Store model, x, y, and output_layer
+		self.model = None
+		self.x, self.y = None, None
+		self.output_layer = None
 
-	def get_batch(self, batch_size, data_tuples, input_domains, N):
-		""" Randomly generates data batch """
+	@staticmethod
+	def log(msg, t=0):
+		print "  " * t + msg, 
+
+	@staticmethod
+	def logln(msg, t=0):
+		print "  " * t + msg
+
+	def predict(self, input_data):
+		""" Returns a 2D (#input_samples by num_notes) array of predictions,
+		one per sample given in the input. For each sample, a row of probability 
+		distributions is given.  """
+		assert len(input_data[0]) == C
+
+		sess, x, output_layer = self.model, self.x, self.output_layer
+		l = len(input_data)
+		self.log("Predicting results from {} test sample{}.".format(l, "s" if l > 1 else ""), 0)
+		results = sess.run(output_layer, feed_dict={x: self.reshape(test_data)})
+		return results
+
+	def reshape(self, sample):
+		""" Reshapes a sample from Cx2 to 2Cx1 """
+		return sample.reshape(len(sample) * 2)
+
+	def get_batch(self, batch_size):
+		""" Randomly generates data batch of the batch_size and returns it. """
 		# Want to randomly choose note-indices from songs, i.e. 
 		#  choose a list of (song-ind, note-ind) tuples from the
 		#  input_domains list
-		batch_mask = self.rng.choice(len(input_domains), batch_size)
+		batch_mask = self.rng.choice(len(self.data), batch_size)
 
 		# each x is like [note, dur, note, dur, ...]
 		# batch_x is [x, x, ...] so it's a batch_size by 2N arr
-		batch_x = np.empty([batch_size, 2 * N])
-		batch_y = np.empty([batch_size, self.num_notes])
+		batch_x = np.empty([batch_size, self.C * 2])
+		batch_y = np.zeros([batch_size, self.num_notes])
 		for bi in range(len(batch_mask)):
 			bm = batch_mask[bi]
-			s, n = input_domains[bm]
-			note, duration = data_tuples[s][n]
+			datum = self.data[bm]
+			classification = datum[-1]
+			note, duration = classification[0], classification[1]
 
 			# assign this row to the batch_x[bm]
-			for i in range(0, N):
-				di = i + n - N
-				batch_x[bi, 2 * i], batch_x[bi, 2 * i + 1] = data_tuples[s][di]
+			batch_x[bi] = self.reshape(datum[0:-1])
 			batch_y[bi, note] = 1
+
 		return batch_x, batch_y
 
-	def save(self, N, path):
+	def save(self, path):
 		if os.path.exists(path + ".index"):
 			raise ValueError("Model already exists here: {}".format(path))
 
-		sess = self.model[N]
+		sess = self.model
 		saver = tf.train.Saver()
 		save_path = saver.save(sess, path)
-		print "Model for N={} saved to {}.".format(N, path)
+		self.log("Model for C={} saved to {}.".format(self.C, path), 0)
 
-	def load(self, N, path):
+	def load(self, path):
 		sess = tf.Session()
 		saver = tf.train.Saver()
 		saver.restore(sess, path)
-		self.models[N] = sess
+		self.model = sess
 
-	def train(self, min_N=2, max_N=10):
-		for n in range(min_N, max_N + 1):
-			self.train_with(n)
-
-	def train_with(self, N):
-		input_domains = self.make_input_domains(self.data, N)
-
-		print "data tuples: " , self.data
-		print "input_domains:", input_domains
-
+	def train(self):
 		# number of neurons in each layer
-		input_num_units = 2 * N
-		hidden_num_units = 4 * N
+		input_num_units = self.C * 2
+		hidden_num_units = 4 * self.C
 		output_num_units = self.num_notes # We'll do the softmax manually
 
 		# define placeholders
 		x = tf.placeholder(tf.float32, [None, input_num_units])
-		self.x[N] = x
+		self.x = x
 		y = tf.placeholder(tf.float32, [None, output_num_units])
-		self.y[N] = y
-
-		# set metavars
-		epochs = 3
-		batch_size = 2
-		num_batches = int(5 * len(input_domains) / batch_size)
-		learning_rate = 0.01
+		self.y = y
 
 		weights = {
 			'hidden': tf.Variable(tf.random_normal([input_num_units, hidden_num_units], seed=self.seed)),
@@ -151,59 +158,48 @@ class JakeModel:
 		hidden_layer = tf.add(tf.matmul(x, weights['hidden']), biases['hidden'])
 		hidden_layer = tf.nn.relu(hidden_layer)
 		output_layer = tf.matmul(hidden_layer, weights['output']) + biases['output']
-		self.output_layer[N] = output_layer
+		self.output_layer = output_layer
 
 		# Loss fn
 		cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(output_layer, y))
 
 		# Optimizer
-		optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+		optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(cost)
 
 		# Initialize
 		init = tf.global_variables_initializer()
 
 		# Start session
 		sess = tf.Session()
+		self.model = sess
 		sess.run(init)
 			
 		# train
-		for epoch in xrange(epochs):
-			print "Starting epoch {}: ".format(epoch + 1)
-			avg_cost = 0
-			for i in xrange(num_batches):
-				print "{}..".format(i + 1), 
-				batch_x, batch_y = self.get_batch(batch_size, self.data, input_domains, N)
-				_, c = sess.run([optimizer, cost], feed_dict={x: batch_x, y: batch_y})
+		for epoch in xrange(self.epochs):
+			self.logln("Training epoch {}.".format(epoch + 1))
+			total_cost = 0
+			for i in xrange(self.num_batches):
+				self.log("", 1)
+				self.log("Batch {}/{}\r".format(i + 1, self.num_batches), 0)
+				batch_x, batch_y = self.get_batch(self.batch_size)
+				_, error = sess.run([optimizer, cost], feed_dict={x: batch_x, y: batch_y})
 				
-				avg_cost += c
-			avg_cost = 1.0 * avg_cost / num_batches
-			print "\nEpoch: {}, cost = {:.5f}".format(epoch + 1, avg_cost)
+				total_cost += error
+			avg_cost = 1.0 * total_cost / self.num_batches
+			self.logln("\nEpoch {} training complete. Average error = {:.5f}".format(epoch + 1, avg_cost), 1)
 		
-		print "\nTraining complete!"
+		self.logln("\nTraining complete for C={}.".format(self.C), 1)
 
-		self.model[N] = sess
+data = np.array([
+	[[1, 0], [2, 0], [3, 1]],
+	[[2, 0], [3, 1], [1, 0]],
+	[[0, 2], [1, 0], [3, 1]],
+	[[1, 0], [3, 1], [1, 0]],
+	[[3, 1], [1, 0], [3, 2]]])
 
-		# correct_prediction = tf.equal(tf.argmax(output_layer, 1), tf.argmax(y, 1))
-		# accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-		# test_x, test_y = self.get_batch(len(input_domains), self.data, input_domains, N)
-		# acc = sess.run(accuracy, feed_dict={x: test_x, y: test_y})
-		# print "Test data final accuracy: {}".format(acc)
-
-
-		# find predictions on test set
-		# pred_temp = tf.equal(tf.argmax(output_layer, 1), tf.argmax(y, 1))
-		# accuracy = tf.reduce_mean(tf.cast(pred_temp, "float"))
-		# print "Validation Accuracy:", accuracy.eval({x: val_x.reshape(-1, 784), y: dense_to_one_hot(val_y.values)})
-		
-		# predict = tf.argmax(output_layer, 1)
-		# pred = predict.eval({x: test_x.reshape(-1, 784)})
-
-		# self.model[N] = model
-
-data = [np.array([[0,1,0,0,1,0,0], [0,0,1,0,1,0,0], [0,0,0,1,0,1,0], [0,1,0,0,1,0,0]]),
-		np.array([[1,0,0,0,0,0,1], [0,1,0,0,1,0,0], [0,0,0,1,0,1,0], [0,1,0,0,1,0,0], [0,0,0,1,0,0,1]])]
-def fn():
+def fn(C):
 	return data
-m = JakeModel(fn, 4)
-m.train_with(2)
-m.test([[[0,1,0,0,1,0,0], [0,0,1,0,1,0,0]], [[0,1,0,0,1,0,0], [0,0,0,1,0,1,0]]], 2)
+
+m = ScalarModel(fn, 2, 4)
+m.save("/home/jb16/git/neuralnotes/models")
+# m.test([[[0,1,0,0,1,0,0], [0,0,1,0,1,0,0]], [[0,1,0,0,1,0,0], [0,0,0,1,0,1,0]]], 2)
