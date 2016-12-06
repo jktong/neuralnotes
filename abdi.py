@@ -20,7 +20,7 @@ class Model(object):
 
     def run_rnn(self, tensor, seq_lengths, cell, scope):
         outputs, _ = tf.nn.dynamic_rnn(cell, tensor,
-                                       sequence_length=seq_lengths,
+#                                       sequence_length=seq_lengths,
                                        dtype=tf.float32,
                                        scope=scope,
                                        time_major=False)
@@ -32,22 +32,27 @@ class Model(object):
         tensor = tf.pack(new_steps, axis=1)
         return tensor
 
-    def train_step(self, data):
-        loss, acc, _ = self.sess.run([self.loss, self.acc, self.train_op], feed_dict={self.data: data})
+    def train_step(self, batch):
+        loss, acc, _ = self.sess.run([self.loss, self.acc, self.train_op], feed_dict={self.data: batch})
         return loss, acc
 
-    def train(self, data,
-              learning_rate=0.001,
-              epochs=100):
+    def train(self, it,
+              epochs=2500,
+              learning_rate=0.001):
+        self.history = []
         self.train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(self.loss)
+        data = it()
         for i in xrange(epochs):
-            loss, acc = self.train_step(data)
+            try:
+                batch = data.next()
+            except StopIteration:
+                data = it()
+                batch = data.next()
+            loss, acc = self.train_step(batch)
+            self.history.append((loss, acc))
             print '[epoch {}]\tloss: {}\tacc: {}'.format(i, loss, acc)
 
         return self
-
-    def predict(self, data):
-        return tf.nn.softmax(self.logits).eval(feed_dict={self.data: data})
 
     def build(self):
         # data: [S, N, D]
@@ -101,6 +106,9 @@ class Model(object):
         
         return self
 
+    def predict(self, data):
+        return tf.nn.softmax(self.logits).eval(feed_dict={self.data: data})
+
     def init(self):
         tf.initialize_all_variables().run()
         return self
@@ -138,11 +146,19 @@ def main(args):
         else:
             return d
             
+    
     #data = pad(np.load('./data/fake_S1000_N10_100_25.npy'), 100, 25)
-    data = pad(np.load('./data/fake_S1000_N3_100_25.npy'), 100, 25)
-    m.train(data)
+
+    # iterator for data
+    #it =
+    def it():
+        data = pad(np.load('./Data/fake_S1000_N3_100_25.npy'), 100, 25)
+        for _ in xrange(10):
+            yield data
+
+    m.train(it, epochs=args.epochs, learning_rate=args.learning_rate)
     m.save(args.save_path)
-    print m.predict(data)
+    print m.history
 
 
 if __name__ == '__main__':
@@ -155,5 +171,13 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--save_path',
                         help='Save path for model. Required.',
                         required=True)
+    parser.add_argument('-e', '--epochs',
+                        help='Number of epochs.',
+                        type=int,
+                        default=2500)
+    parser.add_argument('-r', '--learning_rate',
+                        help='Learning rate.',
+                        type=float,
+                        default=0.001)
     args = parser.parse_args()
     main(args)
