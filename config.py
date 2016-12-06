@@ -2,6 +2,7 @@ MUSICNET_DATA='Data/musicnet.npz'
 MUSICNET_METADATA='Data/musicnet_metadata.csv'
 MUSICNET_PIANOSOLOS='Data/musicnet_pianosolos.npz'
 MUSICNET_PIANOSOLOS_PADDED='Data/musicnet_pianosolos_padded.npz'
+MUSICNET_PIANOSOLOS_MIDINOTEVAL='Data/musicnet_pianosolos_midinoteval.npz'
 
 NOTEVALUE_LENS={'Triplet Sixty Fourth':1.0/64/3,
                 'Sixty Fourth':1.0/64,
