@@ -2,22 +2,29 @@ import math
 import numpy as np
 import tensorflow as tf
 import os
+import time
+import random
+from get_data import all_samples_for_context
 
 class ScalarModel:
 	MIN_C = 2
 	MAX_C = 10
 
-	def __init__(self, get_train_data_fn, C=None, num_notes=128):
+	def __init__(self, get_train_data_fn, C=None, num_notes=128, train=True):
 		self.num_notes = num_notes
+		self.get_train_data_fn = get_train_data_fn
 
 		# Maps C to ScalarContextModel objects
 		self.models = {} 
 		if C == None:
 			for c in range(MIN_C, MAX_C + 1):
-				self.models[c] = ScalarContextModel(get_train_data_fn, c, num_notes)
-				self.models[c].train()
+				self._create(c, train)
 		else:
-			self.models[C] = ScalarContextModel(get_train_data_fn, C, num_notes)
+			self._create(C, train)
+
+	def _create(self, C, train=True):
+		self.models[C] = ScalarContextModel(self.get_train_data_fn, C, self.num_notes)
+		if train:
 			self.models[C].train()
 
 	def predict(self, input_data):
@@ -31,7 +38,7 @@ class ScalarModel:
 	def save(self, the_dir):
 		for c, m in self.models.items():
 			try:
-				p = os.path.join(the_dir, "{}.model".format(c))
+				p = os.path.join(the_dir, "manual-save-C-{}.model".format(c))
 				m.save(p)
 			except Exception as e:
 				print "Error saving model for C={}:\n\t{}".format(c, e)
@@ -40,18 +47,23 @@ class ScalarModel:
 		for c in range(MIN_C, MAX_C + 1):
 			try:
 				m = ScalarContextModel(get_train_data_fn, c, self.num_notes)
-				p = os.path.join(the_dir, "{}.model".format(c))
+				p = os.path.join(the_dir, "manual-save-C-{}.model".format(c))
 				m.load(p)
 			except Exception as e:
 				print "Error loading model for C={}:\n\t{}".format(c, e)
 
+	def resume(self, timestamp, C, epoch):
+		self.models[c].resume(timestamp, epoch)
+
 
 class ScalarContextModel:
-	seed = 128 #lol 
-	rng = np.random.RandomState(seed)
+	MODELS_DIR = "models"
 
-	epochs = 8
-	batch_size = 2
+	seed = random.random()
+	rng = np.random.RandomState()
+
+	epochs = 20
+	batch_size = 300
 	learning_rate = 0.01
 	
 	def __init__(self, get_train_data_fn, C, num_notes=128):
@@ -63,12 +75,16 @@ class ScalarContextModel:
 		self.num_notes = num_notes
 		self.data = get_train_data_fn(C) # 3D tensor
 
-		self.num_batches = int(5 * len(self.data) / self.batch_size)
+		self.num_batches = max(10, int(5 * len(self.data) / self.batch_size))
 
 		# Store model, x, y, and output_layer
 		self.model = None
 		self.x, self.y = None, None
 		self.output_layer = None
+		self.acc = None
+
+		# Initialize architecture
+		self.init()
 
 	@staticmethod
 	def log(msg, t=0):
@@ -124,7 +140,7 @@ class ScalarContextModel:
 		sess = self.model
 		saver = tf.train.Saver()
 		save_path = saver.save(sess, path)
-		self.log("Model for C={} saved to {}.".format(self.C, path), 0)
+		self.logln("Model for C={} saved to {}.".format(self.C, path), 0)
 
 	def load(self, path):
 		sess = tf.Session()
@@ -132,7 +148,7 @@ class ScalarContextModel:
 		saver.restore(sess, path)
 		self.model = sess
 
-	def train(self):
+	def init(self):
 		# number of neurons in each layer
 		input_num_units = self.C * 2
 		hidden_num_units = 4 * self.C
@@ -160,11 +176,26 @@ class ScalarContextModel:
 		output_layer = tf.matmul(hidden_layer, weights['output']) + biases['output']
 		self.output_layer = output_layer
 
+	def resume(self, timestamp, epoch):
+		timestamp = "{}".format(timestamp)
+		d = os.path.join(self.MODELS_DIR, "{}-C-{}".format(timestamp))
+		path = os.path.join(d, "auto-epoch-{}.model".format(epoch))
+		self.load(path)
+		self.train(start_epoch=epoch, timestamp=timestamp)
+
+	def train(self, start_epoch=1, timestamp=None):
+		# If starting from scratch, timestamp should be None
+		if timestamp == None:
+			timestamp = "{}".format(int(time.time()))
+
 		# Loss fn
-		cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(output_layer, y))
+		cost_fn = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(self.output_layer, self.y))
+
+		# Evaluate accuracy
+		self.acc = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(self.output_layer, 1), tf.argmax(self.y, 1)), tf.float32))
 
 		# Optimizer
-		optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(cost)
+		optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(cost_fn)
 
 		# Initialize
 		init = tf.global_variables_initializer()
@@ -175,18 +206,31 @@ class ScalarContextModel:
 		sess.run(init)
 			
 		# train
-		for epoch in xrange(self.epochs):
-			self.logln("Training epoch {}.".format(epoch + 1))
+		for epoch in xrange(start_epoch, self.epochs + 1):
+			self.logln("Training epoch {}.".format(epoch))
 			total_cost = 0
+			max_acc = 0
 			for i in xrange(self.num_batches):
 				self.log("", 1)
 				self.log("Batch {}/{}\r".format(i + 1, self.num_batches), 0)
 				batch_x, batch_y = self.get_batch(self.batch_size)
-				_, error = sess.run([optimizer, cost], feed_dict={x: batch_x, y: batch_y})
+				_, acc_result, error = sess.run([optimizer, self.acc, cost_fn], feed_dict={self.x: batch_x, self.y: batch_y})
+				max_acc = max(acc_result, max_acc)
 				
 				total_cost += error
 			avg_cost = 1.0 * total_cost / self.num_batches
-			self.logln("\nEpoch {} training complete. Average error = {:.5f}".format(epoch + 1, avg_cost), 1)
+			all_x, all_y = self.get_batch(len(self.data))
+			a = self.acc.eval(session=sess, feed_dict={self.x: all_x, self.y: all_y})
+			self.logln("\nEpoch {} training complete. Average loss = {:.5f}, max batch acc = {:.5f}, accuracy = {:.5f},".format(epoch, avg_cost, max_acc, a), 1)
+			save_dir = os.path.join(self.MODELS_DIR, "{}-C-{}".format(timestamp, self.C))
+			if not os.path.exists(save_dir):
+				os.makedirs(save_dir)
+			save_path = os.path.join(save_dir, "auto-epoch-{}.model".format(epoch))
+			try:
+				self.log("Saving state...")
+				self.save(save_path)
+			except:
+				self.logln("Failed to save state to " + save_path)
 		
 		self.logln("\nTraining complete for C={}.".format(self.C), 1)
 
@@ -200,6 +244,8 @@ data = np.array([
 def fn(C):
 	return data
 
-m = ScalarModel(fn, 2, 4)
-m.save("/home/jb16/git/neuralnotes/models")
+# m = ScalarModel(fn, 2, 4)
+# m.save("/home/jb16/git/neuralnotes/models")
 # m.test([[[0,1,0,0,1,0,0], [0,0,1,0,1,0,0]], [[0,1,0,0,1,0,0], [0,0,0,1,0,1,0]]], 2)
+
+m = ScalarModel(all_samples_for_context, C=10, num_notes=128)
