@@ -1,26 +1,29 @@
 import argparse
 import tensorflow as tf
 import numpy as np
+import ujson as json
 
+from get_data import get_iterator_per_song_per_context
 
 class Model(object):
     def __init__(self, name,
-                 num_notes=100,
-                 num_lengths=25,
+                 num_notes=129,
+                 num_lengths=24,
                  notes_dim=50,
-                 lengths_dim=10):
+                 lengths_dim=10,
+                 max_N=10):
         self.name = name
         self.num_notes = num_notes
         self.num_lengths = num_lengths
         self.notes_dim = notes_dim
         self.lengths_dim = lengths_dim
-        self.max_N = 10
+        self.max_N = max_N
 
         self.build()
 
     def run_rnn(self, tensor, seq_lengths, cell, scope):
         outputs, _ = tf.nn.dynamic_rnn(cell, tensor,
-#                                       sequence_length=seq_lengths,
+                                       sequence_length=seq_lengths,
                                        dtype=tf.float32,
                                        scope=scope,
                                        time_major=False)
@@ -49,12 +52,15 @@ class Model(object):
                 data = it()
                 batch = data.next()
             loss, acc = self.train_step(batch)
-            self.history.append((loss, acc))
+            #self.history.append((loss, acc))
             print '[epoch {}]\tloss: {}\tacc: {}'.format(i, loss, acc)
+            del batch
 
         return self
 
     def build(self):
+        tf.set_random_seed(42)
+        
         # data: [S, N, D]
         # S = # of songs/examples
         # N+1 = # of notes (N is # of context notes)
@@ -121,6 +127,10 @@ class Model(object):
         self.saver.save(self.sess, model_path)
         return self
 
+    def save_history(self, hist_path):
+        with open(hist_path, 'w') as f:
+            json.dump(self.history, f)
+
 
 def main(args):
     # testing that things work
@@ -130,35 +140,29 @@ def main(args):
         m.load(args.load_path)
     else:
         m.init()
-
-    # padding function for testing
-    def pad(d, num_notes, num_lengths):
-        X = d[:,:-1,:]
-        Y = d[:,-1:,:]
-        S, N, D = X.shape
-        assert num_notes + num_lengths == D
-        if N < 10:
-            diff = 10 - N
-            X_pad = np.zeros((S, diff, D))
-            X_pad[:,:,[num_notes-1,-1]] = 1
-            new_d = np.concatenate((X, X_pad, Y,), axis=1)
-            return new_d
-        else:
-            return d
             
-    
-    #data = pad(np.load('./data/fake_S1000_N10_100_25.npy'), 100, 25)
-
-    # iterator for data
-    #it =
-    def it():
-        data = pad(np.load('./Data/fake_S1000_N3_100_25.npy'), 100, 25)
-        for _ in xrange(10):
-            yield data
+    it = lambda: get_iterator_per_song_per_context(2, 10)
 
     m.train(it, epochs=args.epochs, learning_rate=args.learning_rate)
     m.save(args.save_path)
-    print m.history
+
+    if args.history_path:
+        m.save_history(args.history_path)
+
+    # padding function for testing
+    #def pad(d, num_notes, num_lengths):
+    #    X = d[:,:-1,:]
+    #    Y = d[:,-1:,:]
+    #    S, N, D = X.shape
+    #    assert num_notes + num_lengths == D
+    #    if N < 10:
+    #        diff = 10 - N
+    #        X_pad = np.zeros((S, diff, D))
+    #        X_pad[:,:,[num_notes-1,-1]] = 1
+    #        new_d = np.concatenate((X, X_pad, Y,), axis=1)
+    #        return new_d
+    #    else:
+    #        return d
 
 
 if __name__ == '__main__':
@@ -171,10 +175,12 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--save_path',
                         help='Save path for model. Required.',
                         required=True)
+    parser.add_argument('-i', '--history_path',
+                        help='Save path for loss/accuracy history.')
     parser.add_argument('-e', '--epochs',
                         help='Number of epochs.',
                         type=int,
-                        default=2500)
+                        default=10000)
     parser.add_argument('-r', '--learning_rate',
                         help='Learning rate.',
                         type=float,
