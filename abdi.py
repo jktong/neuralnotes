@@ -1,3 +1,4 @@
+import argparse
 import tensorflow as tf
 import numpy as np
 
@@ -34,6 +35,16 @@ class Model(object):
     def train_step(self, data):
         loss, acc, _ = self.sess.run([self.loss, self.acc, self.train_op], feed_dict={self.data: data})
         return loss, acc
+
+    def train(self, data,
+              learning_rate=0.001,
+              epochs=100):
+        self.train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(self.loss)
+        for i in xrange(epochs):
+            loss, acc = self.train_step(data)
+            print '[epoch {}]\tloss: {}\tacc: {}'.format(i, loss, acc)
+
+        return self
 
     def predict(self, data):
         return tf.nn.softmax(self.logits).eval(feed_dict={self.data: data})
@@ -102,24 +113,15 @@ class Model(object):
         self.saver.save(self.sess, model_path)
         return self
 
-    def train(self, data,
-              learning_rate=0.001,
-              epochs=100):
-        self.train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(self.loss)
-        for i in xrange(epochs):
-            loss, acc = self.train_step(data)
-            print '[epoch {}]\tloss: {}\tacc: {}'.format(i, loss, acc)
 
-        return self
-        
-
-if __name__ == '__main__':
+def main(args):
     # testing that things work
-    m = Model('mymodel')
-    
-    # uncomment one
-    m.init() # run this if you are training the model for the first time
-    #m.load('./models/test1') # else load a model already on disk
+    m = Model(args.name)
+
+    if args.load_path:
+        m.load(args.load_path)
+    else:
+        m.init()
 
     # padding function for testing
     def pad(d, num_notes, num_lengths):
@@ -138,5 +140,20 @@ if __name__ == '__main__':
             
     #data = pad(np.load('./data/fake_S1000_N10_100_25.npy'), 100, 25)
     data = pad(np.load('./data/fake_S1000_N3_100_25.npy'), 100, 25)
-    m.train(data).save('./models/done')
+    m.train(data)
+    m.save(args.save_path)
     print m.predict(data)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-n', '--name',
+                        help='Name for model.',
+                        default='main')
+    parser.add_argument('-l', '--load_path',
+                        help='Path to model on disk. Will initialize model params randomly if not given.')
+    parser.add_argument('-s', '--save_path',
+                        help='Save path for model. Required.',
+                        required=True)
+    args = parser.parse_args()
+    main(args)
