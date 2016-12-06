@@ -42,7 +42,6 @@ def play_melody(melody, pad=False):
     frequencies = midinote_to_freq(midinotes)
     wavedata = ''
     count = 0
-    print frequencies
     for i, freq in enumerate(frequencies):
         note_len = NOTEVALUE_LENS[NOTEVALUE_LIST[notevalues[i]]]*3
         numframes = int(BITRATE * note_len)
@@ -199,8 +198,8 @@ def pairs_to_melody_matrix(midi_noteval_pairs, max, pad=True):
     melody_matrix = np.zeros((max + 1, note_range + note_value_range))
     for i in xrange(max+1):
         if i < c+1:
-            midi_note = midi_noteval_pairs[i][0]
-            note_value = midi_noteval_pairs[i][1]
+            midi_note = int(midi_noteval_pairs[i][0])
+            note_value = int(midi_noteval_pairs[i][1])
             row = i
             if i == c:
                 row = -1
@@ -209,7 +208,7 @@ def pairs_to_melody_matrix(midi_noteval_pairs, max, pad=True):
             note_value = note_value_range - 1
             row = i - 1
         melody_matrix[row, midi_note] = 1
-        melody_matrix[row, note_value] = 1
+        melody_matrix[row, note_range + note_value] = 1
     return melody_matrix
 
 def samples_to_padded_melody_matrices(samples, c, max):
@@ -241,6 +240,15 @@ def all_samples_all_contexts_padded(min, max):
         padded_samples = samples_to_padded_melody_matrices(samples, c, max)
         all_samples[sample_index:sample_index + n] = padded_samples
     return all_samples
+
+def get_iterator_per_song_per_context(min, max):
+    for c in xrange(min, max+1):
+        sample_dict = samples_per_song_for_context(c)
+        for samples in sample_dict.values():
+            padded_samples = samples_to_padded_melody_matrices(samples, c, max)
+            #for i in xrange(padded_samples.shape[0]):
+            #    play_melody(padded_samples[i])
+            yield padded_samples
 
 if __name__=='__main__':
     write_melodies(format='midi-noteval')
