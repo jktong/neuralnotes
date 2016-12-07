@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 import ujson as json
 
-#from get_data import get_iterator_per_song_per_context
+from get_data import get_iterator_per_song_per_context
 
 class Model(object):
     def __init__(self, name,
