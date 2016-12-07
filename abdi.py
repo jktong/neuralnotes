@@ -9,10 +9,10 @@ class Model(object):
     def __init__(self, name,
                  num_notes=129,
                  num_lengths=24,
-                 notes_dim=100,
-                 lengths_dim=50,
+                 notes_dim=50,
+                 lengths_dim=10,
                  hidden_dim=256,
-                 max_N=32):
+                 max_N=10):
         self.name = name
         self.num_notes = num_notes
         self.num_lengths = num_lengths
@@ -147,7 +147,7 @@ class Model(object):
 def main(args):
     contexts = [2,4,8,16,32]
     max_N = max(contexts)
-    it = lambda: get_iterator_per_song_per_context(contexts, max_N, pad_end=False)
+    it = lambda: get_iterator_per_song_per_context(contexts, max_N, pad_end=False, mode='train')
 
     m = Model(args.name, max_N=max_N)
     if args.load_path:
