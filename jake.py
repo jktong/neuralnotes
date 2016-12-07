@@ -75,6 +75,22 @@ class ScalarContextModel:
 		self.num_notes = num_notes
 		self.data = get_train_data_fn(C) # 3D tensor
 
+		seen_notes = set()
+		note_counts = [0] * num_notes
+		# See what is the domain of all y-notes:
+		for sample in self.data:
+			seen_notes.add(sample[-1][0])
+			note_counts[int(sample[-1][0])] += 1
+		# self.logln("{} total seen note classifications: {}".format(len(seen_notes), seen_notes))
+		# print "{} data points.".format(len(self.data))
+		# print "Distribution of notes:"
+		# print note_counts
+		# ordered_note_counts = sorted([(note, note_counts[note]) for note in range(len(note_counts))], key=lambda t: -t[1])
+		# print "Ordered (note-pitch, note-count) pairs:"
+		# print ordered_note_counts
+		# return
+
+
 		self.num_batches = max(10, int(5 * len(self.data) / self.batch_size))
 
 		# Store model, x, y, and output_layer
@@ -82,6 +98,7 @@ class ScalarContextModel:
 		self.x, self.y = None, None
 		self.output_layer = None
 		self.acc = None
+		self.accuracy_history = {}
 
 		# Initialize architecture
 		self.init()
@@ -149,9 +166,16 @@ class ScalarContextModel:
 		self.model = sess
 
 	def init(self):
+		# The recommended equation for hidden layer size is:
+		#  samples / (alpha*(input_layer + output_layer)), alpha 2 to 10ish
+		# So for us, we have:
+		#  156000 / (alpha * (10 + 128)) ~= (1/alpha) * 1040 
+		# for alpha = 5, this is 208
 		# number of neurons in each layer
 		input_num_units = self.C * 2
-		hidden_num_units = 4 * self.C
+		hidden1_num_units = 600
+		hidden2_num_units = 200
+		hidden3_num_units = 400
 		output_num_units = self.num_notes # We'll do the softmax manually
 
 		# define placeholders
@@ -161,19 +185,29 @@ class ScalarContextModel:
 		self.y = y
 
 		weights = {
-			'hidden': tf.Variable(tf.random_normal([input_num_units, hidden_num_units], seed=self.seed)),
-			'output': tf.Variable(tf.random_normal([hidden_num_units, output_num_units], seed=self.seed))
+			'hidden1': tf.Variable(tf.random_normal([input_num_units, hidden1_num_units], seed=self.seed)),
+			'hidden2': tf.Variable(tf.random_normal([hidden1_num_units, hidden2_num_units], seed=self.seed)),
+			'hidden3': tf.Variable(tf.random_normal([hidden2_num_units, hidden3_num_units], seed=self.seed)),
+			'output': tf.Variable(tf.random_normal([hidden2_num_units, output_num_units], seed=self.seed))
 		}
+		self.weights = weights
 
 		biases = {
-			'hidden': tf.Variable(tf.random_normal([hidden_num_units], seed=self.seed)),
+			'hidden1': tf.Variable(tf.random_normal([hidden1_num_units], seed=self.seed)),
+			'hidden2': tf.Variable(tf.random_normal([hidden2_num_units], seed=self.seed)),
+			'hidden3': tf.Variable(tf.random_normal([hidden3_num_units], seed=self.seed)),
 			'output': tf.Variable(tf.random_normal([output_num_units], seed=self.seed))
 		}
+		self.biases = biases
 
 		# Wire it up
-		hidden_layer = tf.add(tf.matmul(x, weights['hidden']), biases['hidden'])
-		hidden_layer = tf.nn.relu(hidden_layer)
-		output_layer = tf.matmul(hidden_layer, weights['output']) + biases['output']
+		hidden_layer1 = tf.add(tf.matmul(x, weights['hidden1']), biases['hidden1'])
+		hidden_layer1 = tf.nn.relu(hidden_layer1)
+		hidden_layer2 = tf.add(tf.matmul(hidden_layer1, weights['hidden2']), biases['hidden2'])
+		hidden_layer2 = tf.nn.relu(hidden_layer2)
+		# hidden_layer3 = tf.add(tf.matmul(hidden_layer2, weights['hidden3']), biases['hidden3'])
+		# hidden_layer3 = tf.nn.relu(hidden_layer3)
+		output_layer = tf.matmul(hidden_layer2, weights['output']) + biases['output']
 		self.output_layer = output_layer
 
 	def resume(self, timestamp, epoch):
@@ -182,6 +216,9 @@ class ScalarContextModel:
 		path = os.path.join(d, "auto-epoch-{}.model".format(epoch))
 		self.load(path)
 		self.train(start_epoch=epoch, timestamp=timestamp)
+
+	def trend(self):
+		return sorted([acc for epoch, acc in sorted(self.accuracy_history.items())])
 
 	def train(self, start_epoch=1, timestamp=None):
 		# If starting from scratch, timestamp should be None
@@ -198,7 +235,7 @@ class ScalarContextModel:
 		optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(cost_fn)
 
 		# Initialize
-		init = tf.global_variables_initializer()
+		init = tf.initialize_all_variables()
 
 		# Start session
 		sess = tf.Session()
@@ -220,7 +257,9 @@ class ScalarContextModel:
 				total_cost += error
 			avg_cost = 1.0 * total_cost / self.num_batches
 			all_x, all_y = self.get_batch(len(self.data))
+			# all_x, all_y = self.get_batch(2)
 			a = self.acc.eval(session=sess, feed_dict={self.x: all_x, self.y: all_y})
+			self.accuracy_history[epoch] = a
 			self.logln("\nEpoch {} training complete. Average loss = {:.5f}, max batch acc = {:.5f}, accuracy = {:.5f},".format(epoch, avg_cost, max_acc, a), 1)
 			save_dir = os.path.join(self.MODELS_DIR, "{}-C-{}".format(timestamp, self.C))
 			if not os.path.exists(save_dir):
@@ -231,6 +270,29 @@ class ScalarContextModel:
 				self.save(save_path)
 			except:
 				self.logln("Failed to save state to " + save_path)
+
+			# print "data to test is:"
+			# print all_x
+			# print "data classification to test is:"
+			# print all_y
+			results = sess.run(self.output_layer, feed_dict={self.x: all_x})
+			# print "first two results are equal: ", results[0] == results[1]
+			# argmaxes = [np.argmax(row) for row in results]
+			# print "results is {} by {}:".format(len(results), len(results[0]))
+			# print results
+			# print "argmaxes is size {}".format(len(argmaxes))
+			# print argmaxes
+
+			# print "Run separately the first and 2nd data point"
+			# print sess.run(self.output_layer, feed_dict={self.x: all_x[0:1]})
+			# print sess.run(self.output_layer, feed_dict={self.x: all_x[1:2]})
+
+			# xx = sess.run(self.weights["hidden1"])
+			# print "hidden1"
+			# print xx
+
+
+
 		
 		self.logln("\nTraining complete for C={}.".format(self.C), 1)
 
@@ -244,8 +306,13 @@ data = np.array([
 def fn(C):
 	return data
 
+def fake_data(C, num_samples=1000):
+	data = np.random.randint(0, 128, size=(num_samples, C + 1, 2))
+	return data
+
 # m = ScalarModel(fn, 2, 4)
+# m = ScalarModel(fake_data, C=2)
 # m.save("/home/jb16/git/neuralnotes/models")
 # m.test([[[0,1,0,0,1,0,0], [0,0,1,0,1,0,0]], [[0,1,0,0,1,0,0], [0,0,0,1,0,1,0]]], 2)
 
-m = ScalarModel(all_samples_for_context, C=10, num_notes=128)
+m = ScalarModel(all_samples_for_context, C=16)
