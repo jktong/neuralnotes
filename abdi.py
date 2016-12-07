@@ -1,7 +1,6 @@
 import argparse
 import tensorflow as tf
 import numpy as np
-import math
 import ujson as json
 
 from get_data import get_iterator_per_song_per_context
@@ -10,14 +9,16 @@ class Model(object):
     def __init__(self, name,
                  num_notes=129,
                  num_lengths=24,
-                 notes_dim=50,
-                 lengths_dim=10,
+                 notes_dim=100,
+                 lengths_dim=50,
+                 hidden_dim=256,
                  max_N=10):
         self.name = name
         self.num_notes = num_notes
         self.num_lengths = num_lengths
         self.notes_dim = notes_dim
         self.lengths_dim = lengths_dim
+        self.hidden_dim = hidden_dim
         self.max_N = max_N
 
         self.build()
@@ -84,11 +85,14 @@ class Model(object):
                                                initializer=tf.random_normal_initializer())
 
             # single rnn
-            self.cell = tf.nn.rnn_cell.BasicRNNCell(self.notes_dim+self.lengths_dim)
+            self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.notes_dim+self.lengths_dim)
 
             # feed-forward weights
-            self.final_weights = tf.get_variable('finalW', shape=[self.notes_dim+self.lengths_dim,
-                                                                  self.num_notes-1],
+            self.hidden_weights = tf.get_variable('hiddenW', shape=[self.notes_dim+self.lengths_dim, self.hidden_dim],
+                                                  initializer=tf.random_normal_initializer())
+            self.hidden_bias = tf.get_variable('hiddenB', shape=[self.hidden_dim],
+                                               initializer=tf.random_normal_initializer())
+            self.final_weights = tf.get_variable('finalW', shape=[self.hidden_dim, self.num_notes-1],
                                                  initializer=tf.random_normal_initializer())
             self.final_bias = tf.get_variable('finalB', shape=[self.num_notes-1],
                                               initializer=tf.random_normal_initializer())
@@ -99,7 +103,8 @@ class Model(object):
         feature_vecs = tf.concat(2, [notes, lengths]) # shape: (S, N, notes_dim+lengths_dim)
         seq_lengths = self.max_N - tf.reduce_sum(X, reduction_indices=1)[:,-1] # shape: (S,)
         feature_vec = self.run_rnn(feature_vecs, seq_lengths, self.cell, scope) # shape: (S, notes_dim+lengths_dim)
-        self.logits = tf.matmul(feature_vec, self.final_weights) + self.final_bias # shape: (S, notes_dim)
+        hidden_vec = tf.nn.relu(tf.add(tf.matmul(feature_vec, self.hidden_weights), self.hidden_bias)) # shape: (S, hidden_dim)
+        self.logits = tf.add(tf.matmul(hidden_vec, self.final_weights), self.final_bias) # shape: (S, notes_dim)
 
         # loss and accuracy
         self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(self.logits, y)) # shape: scalar
@@ -137,7 +142,6 @@ class Model(object):
 
 
 def main(args):
-    # testing that things work
     m = Model(args.name)
 
     if args.load_path:
@@ -145,7 +149,7 @@ def main(args):
     else:
         m.init()
             
-    it = lambda: get_iterator_per_song_per_context(2, 10)
+    it = lambda: get_iterator_per_song_per_context(10, 10, 10, pad_end=False)
 
     m.train(it, epochs=args.epochs, learning_rate=args.learning_rate)
     m.save(args.save_path)
@@ -153,22 +157,6 @@ def main(args):
     if args.history_path:
         m.save_history(args.history_path)
 
-
-def train_perf():
-    m = Model('main').load('./models/main_e300000_l1en3')
-    perf = {}
-    for N in xrange(2, 11):
-        print N
-        total = total_correct = 0
-        for data in get_iterator_per_song_per_context(N, N):
-            S, _, _ = data.shape
-            acc = m.accuracy(data)
-            total += S
-            total_correct += math.floor(S*acc + 0.5)
-        perf[N] = total_correct / total
-        print perf[N]
-    with open('train_perf.json', 'w') as f:
-        json.dump(perf, f)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -190,6 +178,5 @@ if __name__ == '__main__':
                         help='Learning rate.',
                         type=float,
                         default=0.001)
-    #args = parser.parse_args()
-    #main(args)
-    train_perf()
+    args = parser.parse_args()
+    main(args)

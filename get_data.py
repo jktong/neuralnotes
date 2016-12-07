@@ -6,7 +6,7 @@ import os.path
 import ujson as json
 from intervaltree import Interval,IntervalTree
 
-import pyaudio
+#import pyaudio
 import wave
 import sys
 
