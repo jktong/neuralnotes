@@ -16,6 +16,7 @@ CHUNK = 1024
 WINDOW = np.blackman(CHUNK)
 
 pieces = np.load(open(MUSICNET_PIANOSOLOS_MIDINOTEVAL, 'rb'))
+RANDOM_STATE=np.random.randomstate(42)
 file_list = RANDOMSTATE.shuffle(sorted(pieces.files))
 train_set = file_list[:100]
 validate_set = file_list[100:128]
