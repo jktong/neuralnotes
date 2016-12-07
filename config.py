@@ -31,5 +31,3 @@ NOTEVALUE_LENS={'Triplet Sixty Fourth':1.0/64/3,
 NOTEVALUE_LIST=sorted(NOTEVALUE_LENS.keys(), key=lambda x: NOTEVALUE_LENS[x])
 
 NOTEVALUE_INDEX={nv:i for i, nv in enumerate(NOTEVALUE_LIST)}
-
-RANDOM_STATE = np.random.RandomState(42)
