@@ -231,20 +231,19 @@ def samples_to_padded_melody_matrices(samples, pad_c, pad_end=False):
         new_samples[i] = pairs_to_melody_matrix(samples[i], pad_c, pad=True, pad_end=pad_end)
     return new_samples
 
-def all_samples_all_contexts_padded(min, max, pad_c):
+def all_samples_all_contexts_padded(c_list, pad_c):
     """
     Params:
-    - min is the smallest c we want to have samples for
-    - max is the largest c we want to have samples for
+    - c_list is the list of contexts we want to make samples from
     - pad_c is the context we want to pad every sample to
     """
     note_range = 129
     note_value_range = len(NOTEVALUE_INDEX) + 1
     samples_list = []
-    for c in xrange(min, max+1):
+    for c in c_list:
         samples_list.append(all_samples_for_context(c))
     N = sum([samples.shape[0] for samples in samples_list])
-    all_samples = np.zeros((N, max+1, note_range + note_value_range))
+    all_samples = np.zeros((N, pad_c+1, note_range + note_value_range))
     sample_index = 0
     for samples in samples_list:
         n = samples.shape[0]
@@ -252,8 +251,17 @@ def all_samples_all_contexts_padded(min, max, pad_c):
         all_samples[sample_index:sample_index + n] = padded_samples
     return all_samples
 
-def get_iterator_per_song_per_context(min, max, pad_c, pad_end=False):
-    for c in xrange(min, max+1):
+def get_iterator_per_song_per_context(c_list, pad_c, pad_end=False):
+    """
+    Params:
+    - c_list is the list of contexts we want to make samples from
+    - pad_c is the context we want to pad every sample to
+    - pad_end, if True, means the padding should occur after the notes
+    Returns:
+    - a generator that returns at each iteration the samples for some song
+      and some context
+    """
+    for c in c_list:
         sample_dict = samples_per_song_for_context(c)
         for samples in sample_dict.values():
             padded_samples = samples_to_padded_melody_matrices(samples, pad_c, pad_end)
