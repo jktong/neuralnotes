@@ -182,8 +182,8 @@ def samples_per_song_for_context(c, mode='train'):
     the sliding window needs to be of size c+1.
     """
     sample_dict = {}
-    file_list = select_files(mode=mode)
-    for file in files_list:
+    files = select_files(mode=mode)
+    for file in files:
         song = pieces[file]
         n = song.shape[0]
         samples = np.zeros((n-c,c+1,2))
