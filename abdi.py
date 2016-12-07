@@ -12,7 +12,7 @@ class Model(object):
                  notes_dim=100,
                  lengths_dim=50,
                  hidden_dim=256,
-                 max_N=10):
+                 max_N=32):
         self.name = name
         self.num_notes = num_notes
         self.num_lengths = num_lengths
@@ -25,7 +25,7 @@ class Model(object):
 
     def run_rnn(self, tensor, seq_lengths, cell, scope):
         outputs, _ = tf.nn.dynamic_rnn(cell, tensor,
-                                       sequence_length=seq_lengths,
+#                                       sequence_length=seq_lengths,
                                        dtype=tf.float32,
                                        scope=scope,
                                        time_major=False)
@@ -47,16 +47,19 @@ class Model(object):
         self.history = []
         self.train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(self.loss)
         data = it()
-        for i in xrange(epochs):
-            try:
-                batch = data.next()
-            except StopIteration:
-                data = it()
-                batch = data.next()
-            loss, acc = self.train_step(batch)
-            #self.history.append((loss, acc))
-            print '[epoch {}]\tloss: {}\tacc: {}'.format(i, loss, acc)
-            del batch
+        try:
+            for i in xrange(epochs):
+                try:
+                    batch = data.next()
+                except StopIteration:
+                    data = it()
+                    batch = data.next()
+                loss, acc = self.train_step(batch)
+                #self.history.append((loss, acc))
+                print '[epoch {}]\tloss: {}\tacc: {}'.format(i, loss, acc)
+                del batch
+        except KeyboardInterrupt:
+            pass
 
         return self
 
@@ -142,14 +145,15 @@ class Model(object):
 
 
 def main(args):
-    m = Model(args.name)
+    contexts = [2,4,8,16,32]
+    max_N = max(contexts)
+    it = lambda: get_iterator_per_song_per_context(contexts, max_N, pad_end=False)
 
+    m = Model(args.name, max_N=max_N)
     if args.load_path:
         m.load(args.load_path)
     else:
         m.init()
-            
-    it = lambda: get_iterator_per_song_per_context(10, 10, 10, pad_end=False)
 
     m.train(it, epochs=args.epochs, learning_rate=args.learning_rate)
     m.save(args.save_path)
