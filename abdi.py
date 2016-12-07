@@ -145,6 +145,7 @@ class Model(object):
 
 
 def main(args):
+    print vars(args)
     contexts = [2,4,8,16,32]
     max_N = max(contexts)
     it = lambda: get_iterator_per_song_per_context(contexts, max_N, pad_end=False, mode='train')
