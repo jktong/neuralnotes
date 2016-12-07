@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 import ujson as json
 
-from get_data import get_iterator_per_song_per_context
+#from get_data import get_iterator_per_song_per_context
 
 class Model(object):
     def __init__(self, name,
@@ -145,7 +145,6 @@ class Model(object):
 
 
 def main(args):
-    print vars(args)
     contexts = [2,4,8,16,32]
     max_N = max(contexts)
     it = lambda: get_iterator_per_song_per_context(contexts, max_N, pad_end=False, mode='train')
@@ -162,6 +161,7 @@ def main(args):
     if args.history_path:
         m.save_history(args.history_path)
 
+    print vars(args)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
