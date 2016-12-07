@@ -1,6 +1,7 @@
 import argparse
 import tensorflow as tf
 import numpy as np
+import math
 import ujson as json
 
 from get_data import get_iterator_per_song_per_context
@@ -115,6 +116,9 @@ class Model(object):
     def predict(self, data):
         return tf.nn.softmax(self.logits).eval(feed_dict={self.data: data})
 
+    def accuracy(self, data):
+        return self.acc.eval(feed_dict={self.data: data})
+
     def init(self):
         tf.initialize_all_variables().run()
         return self
@@ -149,21 +153,22 @@ def main(args):
     if args.history_path:
         m.save_history(args.history_path)
 
-    # padding function for testing
-    #def pad(d, num_notes, num_lengths):
-    #    X = d[:,:-1,:]
-    #    Y = d[:,-1:,:]
-    #    S, N, D = X.shape
-    #    assert num_notes + num_lengths == D
-    #    if N < 10:
-    #        diff = 10 - N
-    #        X_pad = np.zeros((S, diff, D))
-    #        X_pad[:,:,[num_notes-1,-1]] = 1
-    #        new_d = np.concatenate((X, X_pad, Y,), axis=1)
-    #        return new_d
-    #    else:
-    #        return d
 
+def train_perf():
+    m = Model('main').load('./models/main_e300000_l1en3')
+    perf = {}
+    for N in xrange(2, 11):
+        print N
+        total = total_correct = 0
+        for data in get_iterator_per_song_per_context(N, N):
+            S, _, _ = data.shape
+            acc = m.accuracy(data)
+            total += S
+            total_correct += math.floor(S*acc + 0.5)
+        perf[N] = total_correct / total
+        print perf[N]
+    with open('train_perf.json', 'w') as f:
+        json.dump(perf, f)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -185,5 +190,6 @@ if __name__ == '__main__':
                         help='Learning rate.',
                         type=float,
                         default=0.001)
-    args = parser.parse_args()
-    main(args)
+    #args = parser.parse_args()
+    #main(args)
+    train_perf()
