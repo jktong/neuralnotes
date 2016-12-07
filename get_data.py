@@ -6,7 +6,7 @@ import os.path
 import ujson as json
 from intervaltree import Interval,IntervalTree
 
-#import pyaudio
+import pyaudio
 import wave
 import sys
 
@@ -190,43 +190,54 @@ def all_samples_for_context(c):
         sample_index += n
     return all_samples
 
-def pairs_to_melody_matrix(midi_noteval_pairs, max, pad=True):
+def pairs_to_melody_matrix(midi_noteval_pairs, pad_c, pad=True, pad_end=False):
+    """
+    Params:
+    - pad_end, if True, puts the padding after the notes. Otherwise, we put the
+      padding before the notes
+    """
     note_range = 128 + int(pad)
     note_value_range = len(NOTEVALUE_INDEX) + int(pad)
     c = midi_noteval_pairs.shape[0]-1
-    max = max if pad else c # if we're not padding max is the same as c
-    melody_matrix = np.zeros((max + 1, note_range + note_value_range))
-    for i in xrange(max+1):
+    pad_c = pad_c if pad else c # if we're not padding max is the same as c
+    melody_matrix = np.zeros((pad_c + 1, note_range + note_value_range))
+    for i in xrange(pad_c+1):
         if i < c+1:
             midi_note = int(midi_noteval_pairs[i][0])
             note_value = int(midi_noteval_pairs[i][1])
-            row = i
+            row = i if pad_end else i + pad_c - c
             if i == c:
                 row = -1
         else:
             midi_note = note_range - 1
             note_value = note_value_range - 1
-            row = i - 1
+            row = i - 1 if pad_end else i- c - 1
         melody_matrix[row, midi_note] = 1
         melody_matrix[row, note_range + note_value] = 1
     return melody_matrix
 
-def samples_to_padded_melody_matrices(samples, c, max):
+def samples_to_padded_melody_matrices(samples, pad_c, pad_end=False):
     """
     Params:
     - samples is a matrix of midi_noteval samples of shape (c+1,2)
     Return a new matrix with each sample replaced by a padded melody matrix
-    of size (max+1,152)
+    of size (pad_c+1,152)
     """
     note_range = 129
     note_value_range = len(NOTEVALUE_INDEX) + 1
     N = samples.shape[0]
-    new_samples = np.zeros((N, max+1, note_range + note_value_range))
+    new_samples = np.zeros((N, pad_c+1, note_range + note_value_range))
     for i in xrange(N):
-        new_samples[i] = pairs_to_melody_matrix(samples[i], max, True)
+        new_samples[i] = pairs_to_melody_matrix(samples[i], pad_c, pad=True, pad_end=pad_end)
     return new_samples
 
-def all_samples_all_contexts_padded(min, max):
+def all_samples_all_contexts_padded(min, max, pad_c):
+    """
+    Params:
+    - min is the smallest c we want to have samples for
+    - max is the largest c we want to have samples for
+    - pad_c is the context we want to pad every sample to
+    """
     note_range = 129
     note_value_range = len(NOTEVALUE_INDEX) + 1
     samples_list = []
@@ -237,15 +248,15 @@ def all_samples_all_contexts_padded(min, max):
     sample_index = 0
     for samples in samples_list:
         n = samples.shape[0]
-        padded_samples = samples_to_padded_melody_matrices(samples, c, max)
+        padded_samples = samples_to_padded_melody_matrices(samples, c, pad_c, pad_end=True)
         all_samples[sample_index:sample_index + n] = padded_samples
     return all_samples
 
-def get_iterator_per_song_per_context(min, max):
+def get_iterator_per_song_per_context(min, max, pad_c, pad_end=False):
     for c in xrange(min, max+1):
         sample_dict = samples_per_song_for_context(c)
         for samples in sample_dict.values():
-            padded_samples = samples_to_padded_melody_matrices(samples, c, max)
+            padded_samples = samples_to_padded_melody_matrices(samples, pad_c, pad_end)
             #for i in xrange(padded_samples.shape[0]):
             #    play_melody(padded_samples[i])
             yield padded_samples
