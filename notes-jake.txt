@@ -1,0 +1,1 @@
+1481168203-C-16 is C=16, 1 hidden layer of 600 neurons. Accuracy plateau 0.09
