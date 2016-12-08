@@ -173,7 +173,7 @@ class ScalarContextModel:
 		# for alpha = 5, this is 208
 		# number of neurons in each layer
 		input_num_units = self.C * 2
-		hidden1_num_units = 800
+		hidden1_num_units = 600
 		hidden2_num_units = 200
 		hidden3_num_units = 400
 		output_num_units = self.num_notes # We'll do the softmax manually
@@ -291,7 +291,9 @@ class ScalarContextModel:
 			# print "hidden1"
 			# print xx
 
-		print "accuracy history: ", self.accuracy_history
+
+
+		
 		self.logln("\nTraining complete for C={}.".format(self.C), 1)
 
 data = np.array([
