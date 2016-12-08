@@ -198,7 +198,7 @@ def all_samples_for_context(c, mode='train'):
     all windows of size c+1 in each melody.
     Each sample is of shape (c+1, 2)
     """
-    sample_dict = samples_per_song_for_context(c, mode='train')
+    sample_dict = samples_per_song_for_context(c, mode=mode)
     N = sum([samples.shape[0] for samples in sample_dict.values()])
     all_samples = np.zeros((N,c+1,2))
     sample_index = 0
@@ -249,17 +249,25 @@ def samples_to_padded_melody_matrices(samples, pad_c, pad_end=False):
         new_samples[i] = pairs_to_melody_matrix(samples[i], pad_c, pad=True, pad_end=pad_end)
     return new_samples
 
-def all_samples_all_contexts_padded(c_list, pad_c):
+def all_samples_all_contexts_padded(c_list, pad_c=-1, mode='train'):
     """
     Params:
     - c_list is the list of contexts we want to make samples from
     - pad_c is the context we want to pad every sample to
+    Returns:
+    A matrix of shape (N, pad_c, 153) where N is the sum of the number of samples
+    for each context
     """
+    if pad_c == -1:
+        if type(c_list) == int:
+            pad_c = c_list
+        else:
+            pad_c = max(c_list)
     note_range = 129
     note_value_range = len(NOTEVALUE_INDEX) + 1
     samples_list = []
     for c in c_list:
-        samples_list.append(all_samples_for_context(c))
+        samples_list.append(all_samples_for_context(c, mode=mode))
     N = sum([samples.shape[0] for samples in samples_list])
     all_samples = np.zeros((N, pad_c+1, note_range + note_value_range))
     sample_index = 0
