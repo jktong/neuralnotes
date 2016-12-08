@@ -188,7 +188,7 @@ class ScalarContextModel:
 			'hidden1': tf.Variable(tf.random_normal([input_num_units, hidden1_num_units], seed=self.seed)),
 			'hidden2': tf.Variable(tf.random_normal([hidden1_num_units, hidden2_num_units], seed=self.seed)),
 			'hidden3': tf.Variable(tf.random_normal([hidden2_num_units, hidden3_num_units], seed=self.seed)),
-			'output': tf.Variable(tf.random_normal([hidden2_num_units, output_num_units], seed=self.seed))
+			'output': tf.Variable(tf.random_normal([hidden1_num_units, output_num_units], seed=self.seed))
 		}
 		self.weights = weights
 
@@ -203,11 +203,11 @@ class ScalarContextModel:
 		# Wire it up
 		hidden_layer1 = tf.add(tf.matmul(x, weights['hidden1']), biases['hidden1'])
 		hidden_layer1 = tf.nn.relu(hidden_layer1)
-		hidden_layer2 = tf.add(tf.matmul(hidden_layer1, weights['hidden2']), biases['hidden2'])
-		hidden_layer2 = tf.nn.relu(hidden_layer2)
+		# hidden_layer2 = tf.add(tf.matmul(hidden_layer1, weights['hidden2']), biases['hidden2'])
+		# hidden_layer2 = tf.nn.relu(hidden_layer2)
 		# hidden_layer3 = tf.add(tf.matmul(hidden_layer2, weights['hidden3']), biases['hidden3'])
 		# hidden_layer3 = tf.nn.relu(hidden_layer3)
-		output_layer = tf.matmul(hidden_layer2, weights['output']) + biases['output']
+		output_layer = tf.matmul(hidden_layer1, weights['output']) + biases['output']
 		self.output_layer = output_layer
 
 	def resume(self, timestamp, epoch):
