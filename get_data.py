@@ -258,11 +258,10 @@ def all_samples_all_contexts_padded(c_list, pad_c=-1, mode='train'):
     A matrix of shape (N, pad_c, 153) where N is the sum of the number of samples
     for each context
     """
+    if type(c_list) == int:
+        c_list = [c_list]
     if pad_c == -1:
-        if type(c_list) == int:
-            pad_c = c_list
-        else:
-            pad_c = max(c_list)
+        pad_c = max(c_list)
     note_range = 129
     note_value_range = len(NOTEVALUE_INDEX) + 1
     samples_list = []
@@ -273,7 +272,7 @@ def all_samples_all_contexts_padded(c_list, pad_c=-1, mode='train'):
     sample_index = 0
     for samples in samples_list:
         n = samples.shape[0]
-        padded_samples = samples_to_padded_melody_matrices(samples, c, pad_c, pad_end=True)
+        padded_samples = samples_to_padded_melody_matrices(samples, pad_c, pad_end=True)
         all_samples[sample_index:sample_index + n] = padded_samples
     return all_samples
 
