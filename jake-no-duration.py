@@ -78,9 +78,9 @@ class ScalarContextModel:
 		seen_notes = set()
 		note_counts = [0] * num_notes
 		# See what is the domain of all y-notes:
-		for sample in self.data:
-			seen_notes.add(sample[-1][0])
-			note_counts[int(sample[-1][0])] += 1
+		# for sample in self.data:
+		# 	seen_notes.add(sample[-1][0])
+		# 	note_counts[int(sample[-1][0])] += 1
 		# self.logln("{} total seen note classifications: {}".format(len(seen_notes), seen_notes))
 		# print "{} data points.".format(len(self.data))
 		# print "Distribution of notes:"
@@ -124,8 +124,8 @@ class ScalarContextModel:
 		return results
 
 	def reshape(self, sample):
-		""" Reshapes a sample from Cx2 to 2Cx1 """
-		return sample.reshape(len(sample) * 2)
+		""" Reshapes a sample from Cx2 to Cx1 (throws out durations)"""
+		return sample[:,0]
 
 	def get_batch(self, batch_size):
 		""" Randomly generates data batch of the batch_size and returns it. """
@@ -136,7 +136,7 @@ class ScalarContextModel:
 
 		# each x is like [note, dur, note, dur, ...]
 		# batch_x is [x, x, ...] so it's a batch_size by 2N arr
-		batch_x = np.empty([batch_size, self.C * 2])
+		batch_x = np.empty([batch_size, self.C])
 		batch_y = np.zeros([batch_size, self.num_notes])
 		for bi in range(len(batch_mask)):
 			bm = batch_mask[bi]
@@ -172,8 +172,8 @@ class ScalarContextModel:
 		#  156000 / (alpha * (10 + 128)) ~= (1/alpha) * 1040 
 		# for alpha = 5, this is 208
 		# number of neurons in each layer
-		input_num_units = self.C * 2
-		hidden1_num_units = 800
+		input_num_units = self.C
+		hidden1_num_units = 600
 		hidden2_num_units = 200
 		hidden3_num_units = 400
 		output_num_units = self.num_notes # We'll do the softmax manually
@@ -271,6 +271,7 @@ class ScalarContextModel:
 			except:
 				self.logln("Failed to save state to " + save_path)
 
+
 			# print "data to test is:"
 			# print all_x
 			# print "data classification to test is:"
@@ -290,9 +291,9 @@ class ScalarContextModel:
 			# xx = sess.run(self.weights["hidden1"])
 			# print "hidden1"
 			# print xx
-
-		print "accuracy history: ", self.accuracy_history
+		
 		self.logln("\nTraining complete for C={}.".format(self.C), 1)
+		print "accuracy history: ", self.accuracy_history
 
 data = np.array([
 	[[1, 0], [2, 0], [3, 1]],
