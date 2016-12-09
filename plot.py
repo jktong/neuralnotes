@@ -42,18 +42,22 @@ if flag == 'train':
     
 else:
     mode, k = flag.split('_')
-    title = '{}-note accuracy per context size, on {} data'.format(k, mode)
+    if k == '1':
+        color = 'red'
+    elif k == '3':
+        color = 'orange'
+    elif k == '6':
+        color = 'yellow'
+    title = '{}-note accuracy gain b/w consecutive contexts, on {} data'.format(k, mode)
     with open(data_path, 'r') as f:
         data = json.load(f).items()
         data.sort(key=lambda p: int(p[0]))
         data = data[:9]
     contexts = [int(datum[0]) for datum in data]
     accs = [datum[1] for datum in data]
-    labels = ['{} to {}'.format(contexts[i-1],contexts[i])for i in xrange(1, len(contexts))]
-    diffs = [accs[i]-accs[i-1] for i in xrange(1, len(accs))]
-    print contexts
-    plot_hist(labels, diffs, title, 'Context size', 'Accuracy', 'g')
-    #plot_hist(contexts, accs, title, 'Context size', 'Accuracy', 'y')
+    contexts = ['              {} to {}'.format(contexts[i-1],contexts[i])for i in xrange(1, len(contexts))]
+    accs = [accs[i]-accs[i-1] for i in xrange(1, len(accs))]
+    plot_hist(contexts, accs, title, 'Context jump', 'Accuracy', color)
     
 
 plt.show()
