@@ -10,9 +10,9 @@ class ScalarModel:
 	MIN_C = 2
 	MAX_C = 10
 
-	def __init__(self, get_train_data_fn, C=None, num_notes=128, train=True):
+	def __init__(self, get_data_fn, C=None, num_notes=128, train=True):
 		self.num_notes = num_notes
-		self.get_train_data_fn = get_train_data_fn
+		self.get_data_fn = get_data_fn
 
 		# Maps C to ScalarContextModel objects
 		self.models = {} 
@@ -23,7 +23,7 @@ class ScalarModel:
 			self._create(C, train)
 
 	def _create(self, C, train=True):
-		self.models[C] = ScalarContextModel(self.get_train_data_fn, C, self.num_notes)
+		self.models[C] = ScalarContextModel(self.get_data_fn, C, self.num_notes)
 		if train:
 			self.models[C].train()
 
@@ -46,7 +46,7 @@ class ScalarModel:
 	def load(self, the_dir):
 		for c in range(MIN_C, MAX_C + 1):
 			try:
-				m = ScalarContextModel(get_train_data_fn, c, self.num_notes)
+				m = ScalarContextModel(get_data_fn, c, self.num_notes)
 				p = os.path.join(the_dir, "manual-save-C-{}.model".format(c))
 				m.load(p)
 			except Exception as e:
@@ -66,14 +66,15 @@ class ScalarContextModel:
 	batch_size = 300
 	learning_rate = 0.01
 	
-	def __init__(self, get_train_data_fn, C, num_notes=128):
-		""" get_train_data_fn(C) returns a 3D numpy array, which is 
+	def __init__(self, get_data_fn, C, num_notes=128):
+		""" get_data_fn(C) returns a 3D numpy array, which is 
 		an array of samples. Each sample is a 2D array, that is, an 
 		array of C+1 notes, where each note is an array of length 2,
 		with elements [note_pitch, note_duration] """
+		self.get_data_fn = get_data_fn
 		self.C = C
 		self.num_notes = num_notes
-		self.data = get_train_data_fn([C]) # 3D tensor
+		self.data = get_data_fn([C]) # 3D tensor
 
 		seen_notes = set()
 		note_counts = [0] * num_notes
@@ -98,7 +99,8 @@ class ScalarContextModel:
 		self.x, self.y = None, None
 		self.output_layer = None
 		self.acc = None
-		self.accuracy_history = {}
+		self.train_history = {}
+		self.val_history = {}
 
 		# Initialize architecture
 		self.init()
@@ -133,17 +135,19 @@ class ScalarContextModel:
 		# Want to randomly choose note-indices from songs, i.e. 
 		#  choose a list of (song-ind, note-ind) tuples from the
 		#  input_domains list
+		# batch_size = 1
 		batch_mask = self.rng.choice(len(self.data), batch_size)
 
 		# each x is like [note, dur, note, dur, ...]
 		# batch_x is [x, x, ...] so it's a batch_size by 2N arr
-		batch_x = np.empty([batch_size, self.C * 2])
+		batch_x = np.empty([batch_size, self.C * len(self.data[0][0])])
 		batch_y = np.zeros([batch_size, self.num_notes])
-		for bi in range(len(batch_mask)):
+		for bi in range(batch_size):
 			bm = batch_mask[bi]
+
 			datum = self.data[bm]
-			classification = datum[-1]
-			note, duration = classification[0], classification[1]
+			classification = datum[-1][:self.num_notes + 1] # Ignore the pad bit at 129
+			note = classification.argmax()
 
 			# assign this row to the batch_x[bm]
 			batch_x[bi] = self.reshape(datum[0:-1])
@@ -173,9 +177,9 @@ class ScalarContextModel:
 		#  156000 / (alpha * (10 + 128)) ~= (1/alpha) * 1040 
 		# for alpha = 5, this is 208
 		# number of neurons in each layer
-		input_num_units = self.C * 2
-		hidden1_num_units = 600
-		hidden2_num_units = 200
+		input_num_units = self.C * len(self.data[0][0])
+		hidden1_num_units = 200
+		hidden2_num_units = 100
 		hidden3_num_units = 400
 		output_num_units = self.num_notes # We'll do the softmax manually
 
@@ -247,21 +251,41 @@ class ScalarContextModel:
 		for epoch in xrange(start_epoch, self.epochs + 1):
 			self.logln("Training epoch {}.".format(epoch))
 			total_cost = 0
-			max_acc = 0
+			max_acc = -float("inf")
+			total_acc = 0
 			for i in xrange(self.num_batches):
 				self.log("", 1)
 				self.log("Batch {}/{}\r".format(i + 1, self.num_batches), 0)
 				batch_x, batch_y = self.get_batch(self.batch_size)
 				_, acc_result, error = sess.run([optimizer, self.acc, cost_fn], feed_dict={self.x: batch_x, self.y: batch_y})
-				max_acc = max(acc_result, max_acc)
-				
+				total_acc += acc_result
+				max_acc = max(max_acc, acc_result)
 				total_cost += error
 			avg_cost = 1.0 * total_cost / self.num_batches
-			all_x, all_y = self.get_batch(len(self.data))
-			# all_x, all_y = self.get_batch(2)
-			a = self.acc.eval(session=sess, feed_dict={self.x: all_x, self.y: all_y})
-			self.accuracy_history[epoch] = a
+			a = 1.0 * total_acc / self.num_batches
+			# all_x, all_y = self.get_batch(len(self.data))
+			# a = self.acc.eval(session=sess, feed_dict={self.x: all_x, self.y: all_y})
+			self.train_history[epoch] = a
 			self.logln("\nEpoch {} training complete. Average loss = {:.5f}, max batch acc = {:.5f}, accuracy = {:.5f},".format(epoch, avg_cost, max_acc, a), 1)
+
+			# Validate
+			val_data = self.get_data_fn(self.C, mode="validate")
+			vsize = len(val_data)
+			val_x = np.empty([vsize, self.C * len(val_data[0][0])])
+			val_y = np.zeros([vsize, self.num_notes])
+			for vi in range(vsize):
+				datum = val_data[vi]
+				note_classification = datum[-1][:self.num_notes + 1] # Ignore the pad bit at 129
+				note_pitch_idx = note_classification.argmax()
+				val_x[vi] = self.reshape(datum[0:-1])
+				val_y[vi, note_pitch_idx] = 1
+
+			vacc = self.acc.eval(session=sess, feed_dict={self.x: val_x, self.y: val_y})
+			self.val_history[epoch] = vacc
+			self.logln("Validation accuracy: {}".format(vacc), 2)
+
+			# Save model snapshot
+
 			save_dir = os.path.join(self.MODELS_DIR, "{}-C-{}".format(timestamp, self.C))
 			if not os.path.exists(save_dir):
 				os.makedirs(save_dir)
@@ -271,12 +295,13 @@ class ScalarContextModel:
 				self.save(save_path)
 			except:
 				self.logln("Failed to save state to " + save_path)
+			print "train, val history", self.train_history, self.val_history
 
 			# print "data to test is:"
 			# print all_x
 			# print "data classification to test is:"
 			# print all_y
-			results = sess.run(self.output_layer, feed_dict={self.x: all_x})
+			# results = sess.run(self.output_layer, feed_dict={self.x: all_x})
 			# print "first two results are equal: ", results[0] == results[1]
 			# argmaxes = [np.argmax(row) for row in results]
 			# print "results is {} by {}:".format(len(results), len(results[0]))
@@ -316,4 +341,4 @@ def fake_data(C, num_samples=1000):
 # m.save("/home/jb16/git/neuralnotes/models")
 # m.test([[[0,1,0,0,1,0,0], [0,0,1,0,1,0,0]], [[0,1,0,0,1,0,0], [0,0,0,1,0,1,0]]], 2)
 
-m = ScalarModel(all_samples_all_contexts_padded, C=8)
+m = ScalarModel(all_samples_all_contexts_padded, C=16)
