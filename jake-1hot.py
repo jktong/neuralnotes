@@ -4,7 +4,7 @@ import tensorflow as tf
 import os
 import time
 import random
-from get_data import all_samples_for_context
+from get_data import all_samples_all_contexts_padded
 
 class ScalarModel:
 	MIN_C = 2
@@ -73,7 +73,7 @@ class ScalarContextModel:
 		with elements [note_pitch, note_duration] """
 		self.C = C
 		self.num_notes = num_notes
-		self.data = get_train_data_fn(C) # 3D tensor
+		self.data = get_train_data_fn([C]) # 3D tensor
 
 		seen_notes = set()
 		note_counts = [0] * num_notes
@@ -124,8 +124,9 @@ class ScalarContextModel:
 		return results
 
 	def reshape(self, sample):
-		""" Reshapes a sample from Cx2 to 2Cx1 """
-		return sample.reshape(len(sample) * 2)
+		""" Reshapes a sample from C x K to CK x 1, where K is the number of 
+		elements (129 + 22 I think) in the vector. """
+		return sample.reshape(len(sample) * len(sample[0]))
 
 	def get_batch(self, batch_size):
 		""" Randomly generates data batch of the batch_size and returns it. """
@@ -315,4 +316,4 @@ def fake_data(C, num_samples=1000):
 # m.save("/home/jb16/git/neuralnotes/models")
 # m.test([[[0,1,0,0,1,0,0], [0,0,1,0,1,0,0]], [[0,1,0,0,1,0,0], [0,0,0,1,0,1,0]]], 2)
 
-m = ScalarModel(all_samples_for_context, C=16)
+m = ScalarModel(all_samples_all_contexts_padded, C=8)
