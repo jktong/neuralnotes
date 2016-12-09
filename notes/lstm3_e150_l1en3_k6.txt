@@ -1,0 +1,13 @@
+{'top_k': 6, 'name': 'lstm3', 'learning_rate': 0.001, 'history_path': 'history/lstm3_e200_1en3_k6.txt', 'load_path': None, 'epochs': 200, 'save_path': 'models/lstm3_e200_l1en3_k6'}
+
+num_notes=129,
+num_lengths=24
+notes_dim=50
+lengths_dim=10
+hidden_dim=256
+max_N=32
+k=6
+
+contexts trained on: [2,4,8,16,32]
+
+sequence_lengths used: no

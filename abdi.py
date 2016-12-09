@@ -12,7 +12,8 @@ class Model(object):
                  notes_dim=50,
                  lengths_dim=10,
                  hidden_dim=256,
-                 max_N=10):
+                 max_N=10,
+                 k=6):
         self.name = name
         self.num_notes = num_notes
         self.num_lengths = num_lengths
@@ -20,6 +21,7 @@ class Model(object):
         self.lengths_dim = lengths_dim
         self.hidden_dim = hidden_dim
         self.max_N = max_N
+        self.k = k
 
         self.build()
 
@@ -41,22 +43,35 @@ class Model(object):
         loss, acc, _ = self.sess.run([self.loss, self.acc, self.train_op], feed_dict={self.data: batch})
         return loss, acc
 
-    def train(self, it,
-              epochs=2500,
+    def train(self, it, history,
+              epochs=100,
               learning_rate=0.001):
-        self.history = []
         self.train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(self.loss)
         data = it()
+        losses = []
+        accs = []
+        epoch = 0
         try:
-            for i in xrange(epochs):
+            while True:
                 try:
                     batch = data.next()
                 except StopIteration:
-                    data = it()
-                    batch = data.next()
+                    epoch += 1
+                    avg_acc = sum(accs)/len(accs)
+                    avg_loss = sum(losses)/len(losses)
+                    print '[epoch {}]\tloss: {}\tacc: {}'.format(epoch, avg_loss, avg_acc)
+                    history.write('{}\t{}\t{}\n'.format(epoch, avg_loss, avg_acc))
+                    
+                    if epoch == epochs:
+                        break
+                    else:
+                        losses = []
+                        accs = []
+                        data = it()
+                        batch = data.next()
                 loss, acc = self.train_step(batch)
-                #self.history.append((loss, acc))
-                print '[epoch {}]\tloss: {}\tacc: {}'.format(i, loss, acc)
+                losses.append(loss)
+                accs.append(acc)
                 del batch
         except KeyboardInterrupt:
             pass
@@ -77,7 +92,7 @@ class Model(object):
         X = self.data[:,:-1,:] # shape: (S, N, D)
         notes = X[:,:,:self.num_notes] # shape: (S, N, num_notes)
         lengths = X[:,:,self.num_notes:] # shape: (S, N, num_lengths)
-        y = self.data[:,-1,:self.num_notes-1] # shape: (S, num_notes)
+        y = self.data[:,-1,:self.num_notes-1] # shape: (S, num_notes-1)
         
         # define parameters
         with tf.variable_scope(self.name) as scope:
@@ -107,11 +122,11 @@ class Model(object):
         seq_lengths = self.max_N - tf.reduce_sum(X, reduction_indices=1)[:,-1] # shape: (S,)
         feature_vec = self.run_rnn(feature_vecs, seq_lengths, self.cell, scope) # shape: (S, notes_dim+lengths_dim)
         hidden_vec = tf.nn.relu(tf.add(tf.matmul(feature_vec, self.hidden_weights), self.hidden_bias)) # shape: (S, hidden_dim)
-        self.logits = tf.add(tf.matmul(hidden_vec, self.final_weights), self.final_bias) # shape: (S, notes_dim)
+        self.logits = tf.add(tf.matmul(hidden_vec, self.final_weights), self.final_bias) # shape: (S, num_notes-1)
 
         # loss and accuracy
         self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(self.logits, y)) # shape: scalar
-        self.acc = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(self.logits, 1), tf.argmax(y, 1)), tf.float32)) # shape: scalar
+        self.acc = tf.reduce_mean(tf.cast(tf.nn.in_top_k(self.logits, tf.argmax(y, 1), self.k), tf.float32)) # shape: scalar
 
         # session/saver management
         self.sess = tf.get_default_session()
@@ -139,14 +154,10 @@ class Model(object):
         self.saver.save(self.sess, model_path)
         return self
 
-    def save_history(self, hist_path):
-        with open(hist_path, 'w') as f:
-            json.dump(self.history, f)
-
-
 def main(args):
+    #contexts = range(2,11)
     contexts = [2,4,8,16,32]
-    max_N = max(contexts)
+    max_N = 32
     it = lambda: get_iterator_per_song_per_context(contexts, max_N, pad_end=False, mode='train')
 
     m = Model(args.name, max_N=max_N)
@@ -155,11 +166,9 @@ def main(args):
     else:
         m.init()
 
-    m.train(it, epochs=args.epochs, learning_rate=args.learning_rate)
+    with open(args.history_path, 'w', 0) as history:
+        m.train(it, history, epochs=args.epochs, learning_rate=args.learning_rate)
     m.save(args.save_path)
-
-    if args.history_path:
-        m.save_history(args.history_path)
 
     print vars(args)
 
@@ -174,14 +183,19 @@ if __name__ == '__main__':
                         help='Save path for model. Required.',
                         required=True)
     parser.add_argument('-i', '--history_path',
-                        help='Save path for loss/accuracy history.')
+                        help='Save path for loss/accuracy history.',
+                        required=True)
     parser.add_argument('-e', '--epochs',
                         help='Number of epochs.',
                         type=int,
-                        default=10000)
+                        default=100)
     parser.add_argument('-r', '--learning_rate',
                         help='Learning rate.',
                         type=float,
                         default=0.001)
+    parser.add_argument('-k', '--top_k',
+                        help='Save accuracy according to top k predicted notes.',
+                        type=int,
+                        default=6)
     args = parser.parse_args()
     main(args)

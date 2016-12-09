@@ -8,6 +8,7 @@ models/*
 # Data
 data/*
 logs/*
+history/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

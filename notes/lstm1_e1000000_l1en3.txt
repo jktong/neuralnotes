@@ -1,0 +1,17 @@
+args: {'name': 'lstm1', 'learning_rate': 0.001, 'history_path': None, 'load_path': None, 'epochs': 100000, 'save_path': 'models/lstm1_e100000_l1en3'}
+
+hyperparams:
+num_notes=129
+num_lengths=24
+notes_dim=50
+lengths_dim=10
+hidden_dim=256
+max_N=32
+
+contexts trained on: [2,4,8,16,32]
+
+sequence_lengths used: no
+
+training performance:
+
+validation performance:
